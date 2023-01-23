@@ -1,9 +1,9 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2021, Eduardo Rodrigues and Henry Schreiner.
+# Copyright (c) 2018-2023, Eduardo Rodrigues and Henry Schreiner.
 #
 # Distributed under the 3-clause BSD license, see accompanying file LICENSE
 # or https://github.com/scikit-hep/decaylanguage for details.
 
+from __future__ import annotations
 
 # Convenient access to the version number
 from ._version import version as __version__
@@ -24,5 +24,5 @@ __all__ = (
 )
 
 
-def __dir__():
+def __dir__() -> tuple[str, ...]:
     return __all__

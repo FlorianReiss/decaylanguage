@@ -1,11 +1,12 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2021, Eduardo Rodrigues and Henry Schreiner.
+# Copyright (c) 2018-2023, Eduardo Rodrigues and Henry Schreiner.
 #
 # Distributed under the 3-clause BSD license, see accompanying file LICENSE
 # or https://github.com/scikit-hep/decaylanguage for details.
 
+from __future__ import annotations
+
 from collections import OrderedDict
-from typing import Any, Dict
+from typing import Any
 
 from lark import Transformer, Tree
 
@@ -22,9 +23,11 @@ class AmpGenTransformer(Transformer):
     def event_type(self, lines):
         return Tree("event_type", [str(p.children[0]) for p in lines])
 
+    # pylint: disable-next=unused-argument
     def fixed(self, lines):
         return False
 
+    # pylint: disable-next=unused-argument
     def free(self, lines):
         return True
 
@@ -45,7 +48,7 @@ class AmpGenTransformer(Transformer):
 
     def decay(self, lines):
         (particle,) = lines[0].children
-        dic = OrderedDict()  # type: Dict[str, Any]
+        dic: dict[str, Any] = OrderedDict()
         dic["name"] = str(particle)
         dic["daughters"] = []
 

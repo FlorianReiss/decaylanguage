@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2021, Eduardo Rodrigues and Henry Schreiner.
+# Copyright (c) 2018-2023, Eduardo Rodrigues and Henry Schreiner.
 #
 # Distributed under the 3-clause BSD license, see accompanying file LICENSE
 # or https://github.com/scikit-hep/decaylanguage for details.
@@ -32,37 +31,30 @@ Basic assumptions
 3) As a consequence, particles that are self-conjugate should not be used
    in 'CDecay' statements, obviously.
 
- 4) Decays defined via a 'CopyDecay' statement are simply (deep) copied
-    and no copy of the corresponding antiparticle is performed unless explicitly requested
-    with another 'CopyDecay' statement.
+4) Decays defined via a 'CopyDecay' statement are simply (deep) copied
+   and no copy of the corresponding antiparticle is performed unless explicitly requested
+   with another 'CopyDecay' statement.
 """
 
-from __future__ import absolute_import, division, print_function
 
+from __future__ import annotations
+
+import copy
 import operator
 import os
 import re
-import sys
 import warnings
+from io import StringIO
+from itertools import zip_longest
+from typing import Any, Iterable, TypeVar
 
-from six import StringIO
-
-if sys.version_info < (3,):
-    from itertools import izip_longest as zip_longest
-else:
-    from itertools import zip_longest
-
-from lark import Lark, Tree, Visitor
+from lark import Lark, Token, Transformer, Tree, Visitor
 from particle import Particle
 from particle.converters import PDG2EvtGenNameMap
 
 from .. import data
 from ..utils import charge_conjugate_name
 from .enums import PhotosEnum
-
-# New in Python 3
-if sys.version_info < (3,):
-    FileNotFoundError = IOError
 
 
 class DecFileNotParsed(RuntimeError):
@@ -73,7 +65,10 @@ class DecayNotFound(RuntimeError):
     pass
 
 
-class DecFileParser(object):
+Self_DecFileParser = TypeVar("Self_DecFileParser", bound="DecFileParser")
+
+
+class DecFileParser:
     """
     The class to parse a .dec decay file.
 
@@ -93,7 +88,7 @@ class DecFileParser(object):
         "_include_ccdecays",
     )
 
-    def __init__(self, *filenames):
+    def __init__(self, *filenames: Iterable[str]) -> None:
         """
         Default constructor. Parse one or more .dec decay files.
 
@@ -102,8 +97,10 @@ class DecFileParser(object):
         filenames: non-keyworded variable length argument
             Input .dec decay file name(s).
         """
-        self._grammar = None  # Loaded Lark grammar definition file
-        self._grammar_info = None  # Name of Lark grammar definition file
+        self._grammar: str | None = None  # Loaded Lark grammar definition file
+        self._grammar_info: None | (
+            dict[str, Any]
+        ) = None  # Name of Lark grammar definition file
 
         # Name(s) of the input decay file(s)
         if filenames:
@@ -114,9 +111,9 @@ class DecFileParser(object):
             for filename in self._dec_file_names:
                 # Check input file
                 if not os.path.exists(filename):
-                    raise FileNotFoundError("'{}'!".format(filename))
+                    raise FileNotFoundError(f"'{filename}'!")
 
-                with open(filename, "r") as file:
+                with open(filename, encoding="utf_8") as file:
                     for line in file:
                         # We need to strip the unicode byte ordering if present before checking for *
                         beg = line.lstrip("\ufeff").lstrip()
@@ -133,18 +130,22 @@ class DecFileParser(object):
             self._dec_file = stream.read()
         else:
             self._dec_file_names = []
-            self._dec_file = None  # type: ignore
+            self._dec_file = None  # type: ignore[assignment]
 
-        self._parsed_dec_file = None  # Parsed decay file
-        self._parsed_decays = None  # Particle decays found in the decay file
+        self._parsed_dec_file: Tree | None = None  # Parsed decay file
+        self._parsed_decays: None | (
+            Any
+        ) = None  # Particle decays found in the decay file
 
         # By default, consider charge-conjugate decays when parsing
         self._include_ccdecays = True
 
     @classmethod
-    def from_string(cls, filecontent):
+    def from_string(
+        cls: type[Self_DecFileParser], filecontent: str
+    ) -> Self_DecFileParser:
         """
-        Parse a .dec decay file provided as a multi-line string.
+        Constructor from a .dec decay file provided as a multi-line string.
 
         Parameters
         ----------
@@ -160,7 +161,7 @@ class DecFileParser(object):
 
         return _cls
 
-    def parse(self, include_ccdecays=True):
+    def parse(self, include_ccdecays: bool = True) -> None:
         """
         Parse the given .dec decay file(s) according to the default Lark parser
         and specified options.
@@ -175,7 +176,7 @@ class DecFileParser(object):
             Choose whether or not to consider charge-conjugate decays,
             which are specified via "CDecay <MOTHER>".
             Make sure you understand the consequences of ignoring
-            charge conjugate decays - you won't have a complete picture!
+            charge conjugate decays - you won't have a complete picture otherwise!
         """
         # Has a file been parsed already?
         if self._parsed_decays is not None:
@@ -195,11 +196,22 @@ class DecFileParser(object):
         parser = Lark(
             self.grammar(), parser=opts["parser"], lexer=opts["lexer"], **extraopts
         )
-
         self._parsed_dec_file = parser.parse(self._dec_file)
+
+        # Strip whitespace and semicolons (necessary for LALR(1) grammar) from model names
+        self._parsed_dec_file = ModelNameCleanup().transform(self._parsed_dec_file)
 
         # At last, find all particle decays defined in the .dec decay file ...
         self._find_parsed_decays()
+        # Replace model aliases with the actual models and model parameters. Deepcopy to avoid modification of dict by
+        # DecayModelParamValueReplacement Visitor.
+        dict_model_aliases = copy.deepcopy(self._dict_raw_model_aliases())
+        self._parsed_decays = [
+            DecayModelAliasReplacement(model_alias_defs=dict_model_aliases).transform(
+                tree
+            )
+            for tree in self._parsed_decays
+        ]
 
         # Check whether certain decay model parameters are defined via
         # variable names with actual values provided via 'Define' statements,
@@ -208,7 +220,6 @@ class DecFileParser(object):
         dict_define_defs = self.dict_definitions()
         for tree in self._parsed_decays:
             DecayModelParamValueReplacement(define_defs=dict_define_defs).visit(tree)
-
         # Create on the fly the decays to be copied, if requested
         if self.dict_decays2copy():
             self._add_decays_to_be_copied()
@@ -217,7 +228,7 @@ class DecFileParser(object):
         if self._include_ccdecays:
             self._add_charge_conjugate_decays()
 
-    def grammar(self):
+    def grammar(self) -> str:
         """
         Access the internal Lark grammar definition file,
         effectively loading the default grammar with default parsing options
@@ -231,9 +242,9 @@ class DecFileParser(object):
         if not self.grammar_loaded:
             self.load_grammar()
 
-        return self._grammar
+        return self._grammar  # type: ignore[return-value]
 
-    def grammar_info(self):
+    def grammar_info(self) -> dict[str, Any]:
         """
         Access the internal Lark grammar definition file name and
         parser options, effectively loading the default grammar
@@ -246,10 +257,17 @@ class DecFileParser(object):
         """
         if not self.grammar_loaded:
             self.load_grammar()
+        assert self._grammar_info is not None
 
         return self._grammar_info
 
-    def load_grammar(self, filename=None, parser="lalr", lexer="standard", **options):
+    def load_grammar(
+        self,
+        filename: str | None = None,
+        parser: str = "lalr",
+        lexer: str = "auto",
+        **options: Any,
+    ) -> None:
         """
         Load a Lark grammar definition file, either the default one,
         or a user-specified one, optionally setting Lark parsing options.
@@ -260,7 +278,7 @@ class DecFileParser(object):
             Input .dec decay file name. By default 'data/decfile.lark' is loaded.
         parser: str, optional, default='lalr'
             The Lark parser engine name.
-        lexer: str, optional, default='standard'
+        lexer: str, optional, default='auto'
             The Lark parser lexer mode to use.
         options: keyword arguments, optional
             Extra options to pass on to the parsing algorithm.
@@ -271,61 +289,92 @@ class DecFileParser(object):
 
         if filename is None:
             filename = "decfile.lark"
-            with data.basepath.joinpath(filename).open() as f:
-                self._grammar = f.read()
+            with data.basepath.joinpath(filename).open() as f1:
+                self._grammar = f1.read()
         else:
-            # Conversion to handle pathlib on Python < 3.6:
-            filename = str(filename)
-
-            with open(filename) as f:
-                self._grammar = f.read()
+            with open(filename, encoding="utf_8") as f2:
+                self._grammar = f2.read()
 
         self._grammar_info = dict(
             lark_file=filename, parser=parser, lexer=lexer, **options
         )
 
     @property
-    def grammar_loaded(self):
+    def grammar_loaded(self) -> bool:
         """
         Check to see if the Lark grammar definition file is loaded.
         """
         return self._grammar is not None
 
-    def dict_decays2copy(self):
+    def dict_decays2copy(self) -> dict[str, str]:
         """
         Return a dictionary of all statements in the input parsed file
         defining a decay to be copied, of the form
         "CopyDecay <NAME> <DECAY_TO_COPY>",
         as {'NAME1': DECAY_TO_COPY1, 'NAME2': DECAY_TO_COPY2, ...}.
         """
+        self._check_parsing()
         return get_decays2copy_statements(self._parsed_dec_file)
 
-    def dict_definitions(self):
+    def dict_definitions(self) -> dict[str, float]:
         """
         Return a dictionary of all definitions in the input parsed file,
         of the form "Define <NAME> <VALUE>",
         as {'NAME1': VALUE1, 'NAME2': VALUE2, ...}.
         """
+        self._check_parsing()
         return get_definitions(self._parsed_dec_file)
 
-    def dict_aliases(self):
+    def dict_model_aliases(self) -> dict[str, list[str]]:
+        """
+        Return a dictionary of all model alias definitions in the input parsed file,
+        of the form "ModelAlias <NAME> <MODEL>",
+        as as {'NAME1': [MODEL_NAME, MODEL_OPTION1, MODEL_OPTION2,...],}.
+        """
+        self._check_parsing()
+        return get_model_aliases(self._parsed_dec_file)
+
+    def _dict_raw_model_aliases(self) -> dict[str, list[Token | Tree]]:
+        """
+        Return a dictionary of all model alias definitions in the input parsed file,
+        of the form "ModelAlias <NAME> <MODEL>",
+        as {'NAME1': MODELTREE1, 'NAME2': MODELTREE2, ...}.
+        """
+        self._check_parsing()
+
+        assert self._parsed_dec_file is not None
+        try:
+            return {
+                tree.children[0]
+                .children[0]
+                .value: copy.deepcopy(tree.children[1].children)
+                for tree in self._parsed_dec_file.find_data("model_alias")
+            }
+        except Exception as err:
+            raise RuntimeError(
+                "Input parsed file does not seem to have the expected structure."
+            ) from err
+
+    def dict_aliases(self) -> dict[str, str]:
         """
         Return a dictionary of all alias definitions in the input parsed file,
         of the form "Alias <NAME> <ALIAS>",
         as {'NAME1': ALIAS1, 'NAME2': ALIAS2, ...}.
         """
+        self._check_parsing()
         return get_aliases(self._parsed_dec_file)
 
-    def dict_charge_conjugates(self):
+    def dict_charge_conjugates(self) -> dict[str, str]:
         """
         Return a dictionary of all charge conjugate definitions
         in the input parsed file, of the form
         "ChargeConj <PARTICLE> <CC_PARTICLE>", as
         {'PARTICLE1': CC_PARTICLE1, 'PARTICLE2': CC_PARTICLE2, ...}.
         """
+        self._check_parsing()
         return get_charge_conjugate_defs(self._parsed_dec_file)
 
-    def dict_pythia_definitions(self):
+    def dict_pythia_definitions(self) -> dict[str, str | float]:
         """
         Return a dictionary of all Pythia definitions in the input parsed file,
         of the form
@@ -334,9 +383,10 @@ class DecFileParser(object):
         "PythiaBothParam <NAME>=<NUMBER>",
         as {'NAME1': 'LABEL1', 'NAME2': VALUE2, ...}.
         """
+        self._check_parsing()
         return get_pythia_definitions(self._parsed_dec_file)
 
-    def dict_jetset_definitions(self):
+    def dict_jetset_definitions(self) -> dict[str, dict[int, int | float | str]]:
         """
         Return a dictionary of all JETSET definitions in the input parsed file,
         of the form
@@ -345,9 +395,10 @@ class DecFileParser(object):
             'PARAM2': {...},
             ...}.
         """
+        self._check_parsing()
         return get_jetset_definitions(self._parsed_dec_file)
 
-    def list_lineshape_definitions(self):
+    def list_lineshape_definitions(self) -> list[tuple[list[str], int]]:
         """
         Return a list of all SetLineshapePW definitions in the input parsed file,
         of the form
@@ -357,9 +408,10 @@ class DecFileParser(object):
         (['MOTHER2', 'DAUGHTER2-1', 'DAUGHTER2-2'], VALUE2),
         ...]
         """
+        self._check_parsing()
         return get_lineshape_definitions(self._parsed_dec_file)
 
-    def global_photos_flag(self):
+    def global_photos_flag(self) -> int:
         """
         Return a boolean-like PhotosEnum enum specifying whether or not PHOTOS
         has been enabled.
@@ -372,17 +424,19 @@ class DecFileParser(object):
         out: PhotosEnum, default=PhotosEnum.no
             PhotosEnum.yes / PhotosEnum.no if PHOTOS enabled / disabled
         """
+        self._check_parsing()
         return get_global_photos_flag(self._parsed_dec_file)
 
-    def list_charge_conjugate_decays(self):
+    def list_charge_conjugate_decays(self) -> list[str]:
         """
         Return a (sorted) list of all charge conjugate decay definitions
         in the input parsed file, of the form "CDecay <MOTHER>", as
         ['MOTHER1', 'MOTHER2', ...].
         """
+        self._check_parsing()
         return get_charge_conjugate_decays(self._parsed_dec_file)
 
-    def _find_parsed_decays(self):
+    def _find_parsed_decays(self) -> None:
         """
         Find all decay definitions in the input parsed file,
         which are of the form "Decay <MOTHER>", and save them internally
@@ -398,13 +452,12 @@ class DecFileParser(object):
         2) Charge conjugates need to be dealt with differently,
         see 'self._add_charge_conjugate_decays()'.
         """
-        if self._parsed_dec_file is not None:
-            self._parsed_decays = get_decays(self._parsed_dec_file)
+        self._parsed_decays = get_decays(self._parsed_dec_file)
 
         # Check for duplicates - should be considered a bug in the .dec file!
         self._check_parsed_decays()
 
-    def _add_decays_to_be_copied(self):
+    def _add_decays_to_be_copied(self) -> None:
         """
         Create the copies of the Lark Tree instances of decays specified
         in the input parsed file via the statements of the form
@@ -424,7 +477,7 @@ class DecFileParser(object):
         # match name -> position in list self._parsed_decays
         name2treepos = {
             t.children[0].children[0].value: i
-            for i, t in enumerate(self._parsed_decays)  # type: ignore
+            for i, t in enumerate(self._parsed_decays)  # type: ignore[arg-type]
         }
 
         # Make the copies taking care to change the name of the mother particle
@@ -432,8 +485,8 @@ class DecFileParser(object):
         misses = []
         for decay2copy, decay2becopied in decays2copy.items():
             try:
-                match = self._parsed_decays[name2treepos[decay2becopied]]  # type: ignore
-                copied_decay = match.__deepcopy__(None)
+                match = self._parsed_decays[name2treepos[decay2becopied]]  # type: ignore[index]
+                copied_decay = copy.deepcopy(match)
                 copied_decay.children[0].children[0].value = decay2copy
                 copied_decays.append(copied_decay)
             except Exception:
@@ -447,9 +500,9 @@ Skipping creation of these copied decay trees.""".format(
             warnings.warn(msg)
 
         # Actually add all these copied decays to the list of decays!
-        self._parsed_decays.extend(copied_decays)  # type: ignore
+        self._parsed_decays.extend(copied_decays)  # type: ignore[union-attr]
 
-    def _add_charge_conjugate_decays(self):
+    def _add_charge_conjugate_decays(self) -> None:
         """
         If requested (see the 'self._include_ccdecays' class attribute),
         create the Lark Tree instances describing the charge conjugate decays
@@ -479,15 +532,14 @@ Skipping creation of these copied decay trees.""".format(
         # Cross-check - make sure charge conjugate decays are not defined
         # with both 'Decay' and 'CDecay' statements!
         mother_names_decays = [
-            get_decay_mother_name(tree) for tree in self._parsed_decays  # type: ignore
+            get_decay_mother_name(tree) for tree in self._parsed_decays  # type: ignore[union-attr]
         ]
 
         duplicates = [n for n in mother_names_ccdecays if n in mother_names_decays]
         if len(duplicates) > 0:
-            msg = """The following particles are defined in the input .dec file with both 'Decay' and 'CDecay': {}!
-The 'CDecay' definition(s) will be ignored ...""".format(
-                ", ".join(d for d in duplicates)
-            )
+            str_duplicates = ", ".join(d for d in duplicates)
+            msg = f"""The following particles are defined in the input .dec file with both 'Decay' and 'CDecay': {str_duplicates}!
+The 'CDecay' definition(s) will be ignored ..."""
             warnings.warn(msg)
 
         # If that's the case, proceed using the decay definitions specified
@@ -510,7 +562,7 @@ The 'CDecay' definition(s) will be ignored ...""".format(
         # match name -> position in list self._parsed_decays
         name2treepos = {
             t.children[0].children[0].value: i
-            for i, t in enumerate(self._parsed_decays)  # type: ignore
+            for i, t in enumerate(self._parsed_decays)  # type: ignore[arg-type]
         }
 
         trees_to_conjugate = []
@@ -518,7 +570,7 @@ The 'CDecay' definition(s) will be ignored ...""".format(
         for ccname in mother_names_ccdecays:
             name = find_charge_conjugate_match(ccname, dict_cc_names)
             try:
-                match = self._parsed_decays[name2treepos[name]]  # type: ignore
+                match = self._parsed_decays[name2treepos[name]]  # type: ignore[index]
                 trees_to_conjugate.append(match)
             except Exception:
                 misses.append(ccname)
@@ -529,12 +581,12 @@ Skipping creation of these charge-conjugate decay trees.""".format(
             )
             warnings.warn(msg)
 
-        cdecays = [tree.__deepcopy__(None) for tree in trees_to_conjugate]
+        cdecays = [copy.deepcopy(tree) for tree in trees_to_conjugate]
 
         # Finally, perform all particle -> anti(particle) replacements,
         # taking care of charge conjugate decays defined via aliases,
         # passing them as charge conjugates to be processed manually.
-        def _is_not_self_conj(t):
+        def _is_not_self_conj(t: Tree) -> bool:
             try:
                 mname = t.children[0].children[0].value
                 if Particle.from_evtgen_name(mname).is_self_conjugate:
@@ -544,26 +596,23 @@ Skipping creation of charge-conjugate decay Tree.""".format(
                     )
                     warnings.warn(msg)
                     return False
-                else:
-                    return True
+                return True
             except Exception:
                 return True
 
-        [
-            ChargeConjugateReplacement(charge_conj_defs=dict_cc_names).visit(t)
-            for t in cdecays
-            if _is_not_self_conj(t)
-        ]
+        for t in cdecays:
+            if _is_not_self_conj(t):
+                ChargeConjugateReplacement(charge_conj_defs=dict_cc_names).visit(t)
 
         # ... and add all these charge-conjugate decays to the list of decays!
-        self._parsed_decays.extend(cdecays)  # type: ignore
+        self._parsed_decays.extend(cdecays)  # type: ignore[union-attr]
 
-    def _check_parsing(self):
+    def _check_parsing(self) -> None:
         """Has the .parse() method been called already?"""
         if self._parsed_dec_file is None:
             raise DecFileNotParsed("Hint: call 'parse()'!")
 
-    def _check_parsed_decays(self):
+    def _check_parsed_decays(self) -> None:
         """
         Is the number of decays parsed consistent with the number of
         decay mother names? An inconsistency can arise if decays are redefined.
@@ -572,7 +621,7 @@ Skipping creation of charge-conjugate decay Tree.""".format(
         """
         # Issue a helpful warning if duplicates are found
         lmn = self.list_decay_mother_names()
-        duplicates = set()  # type: set
+        duplicates = set()
         if self.number_of_decays != len(set(lmn)):
             duplicates = {n for n in lmn if lmn.count(n) > 1}
             msg = """The following particle(s) is(are) redefined in the input .dec file with 'Decay': {}!
@@ -591,28 +640,28 @@ All but the first occurrence will be discarded/removed ...""".format(
                 duplicates_to_remove.extend([item] * (c - 1))
 
         # Actually remove all but the first occurrence of duplicate decays
-        for tree in reversed(self._parsed_decays):  # type: ignore
+        for tree in reversed(self._parsed_decays):  # type: ignore[arg-type]
             val = tree.children[0].children[0].value
             if val in duplicates_to_remove:
                 duplicates_to_remove.remove(val)
-                self._parsed_decays.remove(tree)  # type: ignore
+                self._parsed_decays.remove(tree)  # type: ignore[union-attr]
 
     @property
-    def number_of_decays(self):
+    def number_of_decays(self) -> int:
         """Return the number of particle decays defined in the parsed .dec file."""
         self._check_parsing()
 
-        return len(self._parsed_decays)  # type: ignore
+        return len(self._parsed_decays)  # type: ignore[arg-type]
 
-    def list_decay_mother_names(self):
+    def list_decay_mother_names(self) -> list[str | Any]:
         """
         Return a list of all decay mother names found in the parsed decay file.
         """
         self._check_parsing()
 
-        return [get_decay_mother_name(d) for d in self._parsed_decays]  # type: ignore
+        return [get_decay_mother_name(d) for d in self._parsed_decays]  # type: ignore[union-attr]
 
-    def _find_decay_modes(self, mother):
+    def _find_decay_modes(self, mother: str) -> tuple[Any, ...]:
         """
         Return a tuple of Lark Tree instances describing all the decay modes
         of the input mother particle as defined in the parsed .dec file.
@@ -624,13 +673,13 @@ All but the first occurrence will be discarded/removed ...""".format(
         """
         self._check_parsing()
 
-        for decay_Tree in self._parsed_decays:  # type: ignore
+        for decay_Tree in self._parsed_decays:  # type: ignore[union-attr]
             if get_decay_mother_name(decay_Tree) == mother:
                 return tuple(decay_Tree.find_data("decayline"))
 
         raise DecayNotFound("Decays of particle '%s' not found in .dec file!" % mother)
 
-    def list_decay_modes(self, mother, pdg_name=False):
+    def list_decay_modes(self, mother: str, pdg_name: bool = False) -> list[list[str]]:
         """
         Return a list of decay modes for the given mother particle.
 
@@ -638,7 +687,7 @@ All but the first occurrence will be discarded/removed ...""".format(
         ----------
         mother: str
             Input mother particle name.
-        pdg_name: str, optional, default=False
+        pdg_name: bool, optional, default=False
             Input mother particle name is the PDG name,
             not the (default) EvtGen name.
 
@@ -657,14 +706,16 @@ All but the first occurrence will be discarded/removed ...""".format(
             for mode in self._find_decay_modes(mother)
         ]
 
-    def _decay_mode_details(self, decay_mode, display_photos_keyword):
+    def _decay_mode_details(
+        self, decay_mode: Tree, display_photos_keyword: bool = True
+    ) -> tuple[float, list[str], str, str | list[str | Any]]:
         """
         Parse a decay mode (Tree instance)
         and return the relevant bits of information in it.
 
         Parameters
         ----------
-        decay_mode: str
+        decay_mode: Tree
             Input decay mode to list its details.
         display_photos_keyword: boolean
             Omit or not the "PHOTOS" keyword in decay models.
@@ -682,21 +733,24 @@ All but the first occurrence will be discarded/removed ...""".format(
 
     def print_decay_modes(
         self,
-        mother,
-        pdg_name=False,
-        print_model=True,
-        display_photos_keyword=True,
-        ascending=False,
-        normalize=True,
-    ):
+        mother: str,
+        pdg_name: bool = False,
+        print_model: bool = True,
+        display_photos_keyword: bool = True,
+        ascending: bool = False,
+        normalize: bool = False,
+        scale: float | None = None,
+    ) -> None:
         """
-        Pretty print of the decay modes of a given particle.
+        Pretty print of the decay modes of a given particle,
+        optionally with decay model information and/or normalisation or scaling
+        of the branching fractions.
 
         Parameters
         ----------
         mother: str
             Input mother particle name.
-        pdg_name: str, optional, default=False
+        pdg_name: bool, optional, default=False
             Input mother particle name is the PDG name,
             not the (default) EvtGen name.
         print_model: bool, optional, default=True
@@ -707,10 +761,63 @@ All but the first occurrence will be discarded/removed ...""".format(
         ascending: bool, optional, default=False
             Print the list of decay modes ordered in ascending/descending order
             of branching fraction.
-        normalize: bool, optional, default=True
-            Print the branching fractions normalized to unity
-            (this does not affect the values parsed and actually stored in memory).
+        normalize: bool, optional, default=False
+            Print the branching fractions normalized to unity.
+            The printing does not affect the values parsed and actually stored in memory.
+        scale: float | None, optional, default=None
+            If not None, the branching fractions (BFs) are normalized to the given value,
+            which is taken to be the BF of the highest-BF mode of the list.
+            Must be a number in the range ]0, 1].
+
+        Examples
+        --------
+        >>> s = '''Decay MyD_0*+
+        ...  0.533   MyD0   pi+        PHSP;
+        ...  0.08    MyD*0  pi+  pi0   PHSP;
+        ...  0.0271  MyD*+  pi0  pi0   PHSP;
+        ...  0.0542  MyD*+  pi+  pi-   PHSP;
+        ... Enddecay
+        ... '''
+        >>> p = DecFileParser.from_string(s)
+        >>> p.parse()
+        >>>
+        >>> # Simply print what has been parsed
+        >>> p.print_decay_modes("MyD_0*+")
+          0.533             MyD0  pi+         PHSP;
+          0.08              MyD*0 pi+ pi0     PHSP;
+          0.0542            MyD*+ pi+ pi-     PHSP;
+          0.0271            MyD*+ pi0 pi0     PHSP;
+        >>>
+        >>> # Print normalizing the sum of all mode BFs to unity
+        >>> p.print_decay_modes("MyD_0*+", normalize=True)
+          0.7676796774      MyD0  pi+         PHSP;
+          0.1152239666      MyD*0 pi+ pi0     PHSP;
+          0.07806423736     MyD*+ pi+ pi-     PHSP;
+          0.03903211868     MyD*+ pi0 pi0     PHSP;
+        >>>
+        >>> # Print scaling all BFs relative to the BF of the highest-BF mode in the list,
+        >>> # the latter being set to the value of "scale".
+        >>> # In this example the decay file as printed would effectively signal, for inspection,
+        >>> # that about 35% of the total decay width is not accounted for in the list of modes,
+        >>> # since the sum of probabilities, interpreted as BFs, sum to about 65%.
+        >>> p.print_decay_modes("MyD_0*+", scale=0.5)
+          0.5               MyD0  pi+         PHSP;
+          0.07504690432     MyD*0 pi+ pi0     PHSP;
+          0.05084427767     MyD*+ pi+ pi-     PHSP;
+          0.02542213884     MyD*+ pi0 pi0     PHSP;
         """
+
+        if scale is not None:
+            # One cannot normalize and scale at the same time, clearly
+            if normalize:
+                raise RuntimeError(
+                    "Be consistent - use either 'normalize' and 'scale'!"
+                )
+            if not 0.0 < scale <= 1.0:
+                raise RuntimeError(
+                    "A branching fraction must be in the range ]0, 1]! You set scale = {scale}."
+                )
+
         if pdg_name:
             mother = PDG2EvtGenNameMap[mother]
 
@@ -733,17 +840,26 @@ All but the first occurrence will be discarded/removed ...""".format(
 
         ls = [(bf, ls_attrs_aligned[idx]) for idx, bf in enumerate(ls_dict)]
         ls.sort(key=operator.itemgetter(0), reverse=(not ascending))
-        norm = sum(bf for bf, _ in ls) if normalize else 1
+
+        norm = 1.0
+        if normalize:
+            norm = sum(bf for bf, _ in ls)
+        elif scale is not None:
+            # Get the largest branching fraction
+            i = -1 if ascending else 0
+            norm = ls[i][0] / scale
 
         for bf, info in ls:
             if print_model:
-                line = "  {:.4f}   {}     {}  {}".format(bf / norm, *info)
+                line = "  {:<15.10g}   {}     {}  {}".format(bf / norm, *info)
             else:
-                line = "  {:.4f}   {}".format(bf / norm, info[0])
+                line = f"  {bf / norm:<15.10g}   {info[0]}"
             print(line.rstrip() + ";")
 
     @staticmethod
-    def _align_items(to_align, align_mode="left", sep=" "):
+    def _align_items(
+        to_align: str, align_mode: str = "left", sep: str = " "
+    ) -> list[str]:
         """
         Left or right align all strings in a list to the same length.
         By default the string is space-broke into sub-strings and each sub-string aligned individually.
@@ -759,10 +875,9 @@ All but the first occurrence will be discarded/removed ...""".format(
             max_len = max(len(s) for s in to_align)
             if align_mode == "left":
                 return [s.ljust(max_len) for s in to_align]
-            elif align_mode == "right":
+            if align_mode == "right":
                 return [s.rjust(max_len) for s in to_align]
-            else:
-                raise ValueError("Unknown align mode: {}".format(align_mode))
+            raise ValueError(f"Unknown align mode: {align_mode}")
 
         aligned = []
         for cat in zip_longest(*to_align, fillvalue=""):
@@ -773,13 +888,17 @@ All but the first occurrence will be discarded/removed ...""".format(
             elif align_mode == "right":
                 row = [s.rjust(max_len) for s in cat]
             else:
-                raise ValueError("Unknown align mode: {}".format(align_mode))
+                raise ValueError(f"Unknown align mode: {align_mode}")
 
             aligned.append(row)
 
         return [sep.join(row) for row in zip(*aligned)]
 
-    def build_decay_chains(self, mother, stable_particles=()):
+    def build_decay_chains(
+        self,
+        mother: str,
+        stable_particles: list[str] | set[str] | tuple[str] | tuple[()] = (),
+    ) -> dict[str, list[dict[str, float | str | list[Any]]]]:
         """
         Iteratively build the entire decay chains of a given mother particle,
         optionally considering, on the fly, certain particles as stable.
@@ -801,7 +920,7 @@ All but the first occurrence will be discarded/removed ...""".format(
             Decay chain as a dictionary of the form
             {mother: [{'bf': float, 'fs': list, 'model': str, 'model_params': str}]}
             where
-            'bf' stands for the deca mode branching fraction,
+            'bf' stands for the decay mode branching fraction,
             'fs' is a list of final-state particle names (strings)
             and/or dictionaries of the same form as the decay chain above,
             'model' is the model name, if found, else '',
@@ -841,7 +960,7 @@ All but the first occurrence will be discarded/removed ...""".format(
             list_dm_details = self._decay_mode_details(dm, display_photos_keyword=False)
             d = dict(zip(keys, list_dm_details))
 
-            for i, fs in enumerate(d["fs"]):
+            for i, fs in enumerate(d["fs"]):  # type: ignore[arg-type, var-annotated]
                 if fs in stable_particles:
                     continue
 
@@ -851,29 +970,87 @@ All but the first occurrence will be discarded/removed ...""".format(
                     # _n_dms = len(self._find_decay_modes(fs))
 
                     _info = self.build_decay_chains(fs, stable_particles)
-                    d["fs"][i] = _info
+                    d["fs"][i] = _info  # type: ignore[index]
                 except DecayNotFound:
                     pass
 
             info.append(d)
 
-        return {mother: info}
+        return {mother: info}  # type: ignore[dict-item]
 
-    def __repr__(self):
+    def __repr__(self) -> str:
         if self._parsed_dec_file is not None:
             return "<{self.__class__.__name__}: decfile(s)={decfile}, n_decays={n_decays}>".format(
                 self=self, decfile=self._dec_file_names, n_decays=self.number_of_decays
             )
-        else:
-            return "<{self.__class__.__name__}: decfile(s)={decfile}>".format(
-                self=self, decfile=self._dec_file_names
-            )
+        return "<{self.__class__.__name__}: decfile(s)={decfile}>".format(
+            self=self, decfile=self._dec_file_names
+        )
 
-    def __str__(self):
+    def __str__(self) -> str:
         return repr(self)
 
 
-class DecayModelParamValueReplacement(Visitor):
+class ModelNameCleanup(Transformer):  # type: ignore[misc]
+    """
+    Lark Transformer removing whitespace and semicolons from decay model parameter terminals
+    (MODEL_NAME_AND_WS and MODEL_NAME_AND_SC). These exist to distinguish model names from
+    strings containing them as substrings and have to be terminals to allow LALR(1) parsing.
+
+    """
+
+    def MODEL_NAME_AND_WS(self, t: Token) -> Token:
+        return t.update(value=t.strip())
+
+    def MODEL_NAME_AND_SC(self, t: Token) -> Token:
+        return t.update(value=t.strip(";").strip())
+
+
+class DecayModelAliasReplacement(Transformer):  # type: ignore[misc]
+    """
+    Lark Transformer implementing the replacement of decay model aliases
+    with the model provided in 'ModelAlias' statements.
+    This replaces the model_label with a subtree containing both the model name
+    and its options.
+    The replacement is only relevant for Lark Tree instances of name
+    'model' (Tree.data == 'model').
+
+    Parameters
+    ----------
+    model_alias_defs: dict, optional, default={}
+        Dictionary with the 'ModelAlias' definitions in the parsed file.
+        Argument to be passed to the class constructor.
+
+    """
+
+    def __init__(self, model_alias_defs: dict[str, Any] | None = None) -> None:
+        super().__init__()
+        self.define_defs = model_alias_defs or {}
+
+    def _replacement(self, t: Token) -> Token:
+
+        if t.value not in self.define_defs:
+            raise ValueError(
+                f"ModelAlias {t.value} is not defined. Please define this ModelAlias in the decayfile."
+            )
+        return self.define_defs[t.value]
+
+    def model(self, treelist: list[Tree]) -> Tree:
+        """
+        Method for the rule (here, a replacement) we wish to implement.
+        Must happen on model level to replace a Lark Token with a Lark Tree.
+        Doesn't do anything if no model_label is found.
+        """
+        if isinstance(treelist[0], Tree):
+            assert (
+                treelist[0].data == "model_label"
+            ), f"Instead of a subtree of type 'model_label' one of type {treelist[0].data} has been passed."
+            return Tree("model", self._replacement(treelist[0].children[0]))
+
+        return Tree("model", treelist)
+
+
+class DecayModelParamValueReplacement(Visitor):  # type: ignore[misc]
     """
     Lark Visitor implementing the replacement of decay model parameter names
     with the actual parameter values provided in 'Define' statements,
@@ -905,17 +1082,17 @@ class DecayModelParamValueReplacement(Visitor):
     Tree(model_options, [Token(LABEL, 507000000000.0)])])])])
     """
 
-    def __init__(self, define_defs=None):
+    def __init__(self, define_defs: dict[str, Any] | None = None) -> None:
         self.define_defs = define_defs or {}
 
-    def _replacement(self, t):
+    def _replacement(self, t: Tree) -> None:
         try:
             t.children[0].value = float(t.children[0].value)
         except AttributeError:
             if t.value in self.define_defs:
                 t.value = self.define_defs[t.value]
 
-    def model_options(self, tree):
+    def model_options(self, tree: Tree) -> None:
         """
         Method for the rule (here, a replacement) we wish to implement.
         """
@@ -925,7 +1102,7 @@ class DecayModelParamValueReplacement(Visitor):
             self._replacement(child)
 
 
-class ChargeConjugateReplacement(Visitor):
+class ChargeConjugateReplacement(Visitor):  # type: ignore[misc]
     """
     Lark Visitor implementing the replacement of all particle names
     with their charge conjugate particle names
@@ -960,10 +1137,10 @@ class ChargeConjugateReplacement(Visitor):
     Tree(particle, [Token(LABEL, 'pi-')]), Tree(model, [Token(MODEL_NAME, 'PHSP')])])])
     """
 
-    def __init__(self, charge_conj_defs=None):
+    def __init__(self, charge_conj_defs: dict[str, str] | None = None) -> None:
         self.charge_conj_defs = charge_conj_defs or {}
 
-    def particle(self, tree):
+    def particle(self, tree: Tree) -> None:
         """
         Method for the rule (here, a replacement) we wish to implement.
         """
@@ -974,7 +1151,9 @@ class ChargeConjugateReplacement(Visitor):
         tree.children[0].value = ccpname
 
 
-def find_charge_conjugate_match(pname, dict_cc_names=None):
+def find_charge_conjugate_match(
+    pname: str, dict_cc_names: dict[str, str] | None = None
+) -> str:
     """
     Find the charge-conjugate particle name making use of user information
     from "ChargeConj" statements in a decay file.
@@ -995,7 +1174,7 @@ def find_charge_conjugate_match(pname, dict_cc_names=None):
     return charge_conjugate_name(pname)
 
 
-def get_decay_mother_name(decay_tree):
+def get_decay_mother_name(decay_tree: Tree) -> str | Any:
     """
     Return the mother particle name for the decay mode defined
     in the input Tree of name 'decay'.
@@ -1005,7 +1184,7 @@ def get_decay_mother_name(decay_tree):
     decay_tree: Lark Tree instance
         Input Tree satisfying Tree.data=='decay'.
     """
-    if not isinstance(decay_tree, Tree) or decay_tree.data != "decay":
+    if decay_tree.data != "decay":
         raise RuntimeError("Input not an instance of a 'decay' Tree!")
 
     # For a 'decay' Tree, tree.children[0] is the mother particle Tree
@@ -1013,7 +1192,7 @@ def get_decay_mother_name(decay_tree):
     return decay_tree.children[0].children[0].value
 
 
-def get_branching_fraction(decay_mode):
+def get_branching_fraction(decay_mode: Tree) -> float:
     """
     Return the branching fraction (float) for the decay mode defined
     in the input Tree of name 'decayline'.
@@ -1023,20 +1202,20 @@ def get_branching_fraction(decay_mode):
     decay_mode: Lark Tree instance
         Input Tree satisfying Tree.data=='decayline'.
     """
-    if not isinstance(decay_mode, Tree) or decay_mode.data != "decayline":
+    if decay_mode.data != "decayline":
         raise RuntimeError("Check your input, not an instance of a 'decayline' Tree!")
 
     # For a 'decayline' Tree, Tree.children[0] is the branching fraction Tree
     # and tree.children[0].children[0].value is the BF stored as a str
     try:  # the branching fraction value as a float
         return float(decay_mode.children[0].children[0].value)
-    except RuntimeError:
+    except RuntimeError as e:
         raise RuntimeError(
             "'decayline' Tree does not seem to have the usual structure. Check it."
-        )
+        ) from e
 
 
-def get_final_state_particles(decay_mode):
+def get_final_state_particles(decay_mode: Tree) -> list[Tree]:
     """
     Return a list of Lark Tree instances describing the final-state particles
     for the decay mode defined in the input Tree of name 'decayline'.
@@ -1056,14 +1235,14 @@ def get_final_state_particles(decay_mode):
         [Tree(particle, [Token(LABEL, 'K+')]), Tree(particle, [Token(LABEL, 'K-')])]
     will be returned.
     """
-    if not isinstance(decay_mode, Tree) or decay_mode.data != "decayline":
+    if decay_mode.data != "decayline":
         raise RuntimeError("Input not an instance of a 'decayline' Tree!")
 
     # list of Trees of final-state particles
     return list(decay_mode.find_data("particle"))
 
 
-def get_final_state_particle_names(decay_mode):
+def get_final_state_particle_names(decay_mode: Tree) -> list[str]:
     """
     Return a list of final-state particle names for the decay mode defined
     in the input Tree of name 'decayline'.
@@ -1081,7 +1260,7 @@ def get_final_state_particle_names(decay_mode):
         Enddecay
     the list ['K+', 'K-'] will be returned.
     """
-    if not isinstance(decay_mode, Tree) or decay_mode.data != "decayline":
+    if decay_mode.data != "decayline":
         raise RuntimeError("Input not an instance of a 'decayline' Tree!")
 
     fsps = get_final_state_particles(decay_mode)
@@ -1089,7 +1268,7 @@ def get_final_state_particle_names(decay_mode):
     return [str(fsp.children[0].value) for fsp in fsps]
 
 
-def get_model_name(decay_mode):
+def get_model_name(decay_mode: Tree) -> str:
     """
     Return the decay model name in a Tree of name 'decayline'.
 
@@ -1106,14 +1285,14 @@ def get_model_name(decay_mode):
         Enddecay
     the string 'SSD_CP' will be returned.
     """
-    if not isinstance(decay_mode, Tree) or decay_mode.data != "decayline":
+    if decay_mode.data != "decayline":
         raise RuntimeError("Input not an instance of a 'decayline' Tree!")
 
     lm = list(decay_mode.find_data("model"))
     return str(lm[0].children[0].value)
 
 
-def get_model_parameters(decay_mode):
+def get_model_parameters(decay_mode: Tree) -> str | list[str | Any]:
     """
     Return a list of decay model parameters in a Tree of name 'decayline',
     if defined, else an empty string.
@@ -1141,12 +1320,12 @@ def get_model_parameters(decay_mode):
         ['DtoKpipipi_v1']
     will be returned.
     """
-    if not isinstance(decay_mode, Tree) or decay_mode.data != "decayline":
+    if decay_mode.data != "decayline":
         raise RuntimeError("Input not an instance of a 'decayline' Tree!")
 
     lmo = list(decay_mode.find_data("model_options"))
 
-    def _value(t):
+    def _value(t: Tree) -> str | Any:
         try:
             return t.children[0].value
         except AttributeError:
@@ -1155,7 +1334,7 @@ def get_model_parameters(decay_mode):
     return [_value(tree) for tree in lmo[0].children] if len(lmo) == 1 else ""
 
 
-def get_decays(parsed_file):
+def get_decays(parsed_file: Tree) -> list[Tree]:
     """
     Return a list of all decay definitions in the input parsed file,
     of the form "Decay <MOTHER>",
@@ -1168,16 +1347,15 @@ def get_decays(parsed_file):
     parsed_file: Lark Tree instance
         Input parsed file.
     """
-    if not isinstance(parsed_file, Tree):
-        raise RuntimeError("Input not an instance of a Tree!")
-
     try:
         return list(parsed_file.find_data("decay"))
-    except Exception:
-        RuntimeError("Input parsed file does not seem to have the expected structure.")
+    except Exception as err:
+        raise RuntimeError(
+            "Input parsed file does not seem to have the expected structure."
+        ) from err
 
 
-def get_charge_conjugate_decays(parsed_file):
+def get_charge_conjugate_decays(parsed_file: Tree) -> list[str]:
     """
     Return a (sorted) list of all charge conjugate decay definitions
     in the input parsed file, of the form "CDecay <MOTHER>", as
@@ -1188,19 +1366,19 @@ def get_charge_conjugate_decays(parsed_file):
     parsed_file: Lark Tree instance
         Input parsed file.
     """
-    if not isinstance(parsed_file, Tree):
-        raise RuntimeError("Input not an instance of a Tree!")
 
     try:
         return sorted(
             tree.children[0].children[0].value
             for tree in parsed_file.find_data("cdecay")
         )
-    except Exception:
-        RuntimeError("Input parsed file does not seem to have the expected structure.")
+    except Exception as err:
+        raise RuntimeError(
+            "Input parsed file does not seem to have the expected structure."
+        ) from err
 
 
-def get_decays2copy_statements(parsed_file):
+def get_decays2copy_statements(parsed_file: Tree) -> dict[str, str]:
     """
     Return a dictionary of all statements in the input parsed file
     defining a decay to be copied, of the form
@@ -1212,19 +1390,18 @@ def get_decays2copy_statements(parsed_file):
     parsed_file: Lark Tree instance
         Input parsed file.
     """
-    if not isinstance(parsed_file, Tree):
-        raise RuntimeError("Input not an instance of a Tree!")
-
     try:
         return {
             tree.children[0].children[0].value: tree.children[1].children[0].value
             for tree in parsed_file.find_data("copydecay")
         }
-    except Exception:
-        RuntimeError("Input parsed file does not seem to have the expected structure.")
+    except Exception as err:
+        raise RuntimeError(
+            "Input parsed file does not seem to have the expected structure."
+        ) from err
 
 
-def get_definitions(parsed_file):
+def get_definitions(parsed_file: Tree) -> dict[str, float]:
     """
     Return a dictionary of all definitions in the input parsed file, of the form
     "Define <NAME> <VALUE>", as {'NAME1': VALUE1, 'NAME2': VALUE2, ...}.
@@ -1234,9 +1411,6 @@ def get_definitions(parsed_file):
     parsed_file: Lark Tree instance
         Input parsed file.
     """
-    if not isinstance(parsed_file, Tree):
-        raise RuntimeError("Input not an instance of a Tree!")
-
     try:
         return {
             tree.children[0]
@@ -1244,11 +1418,41 @@ def get_definitions(parsed_file):
             .value: float(tree.children[1].children[0].value)
             for tree in parsed_file.find_data("define")
         }
-    except Exception:
-        RuntimeError("Input parsed file does not seem to have the expected structure.")
+    except Exception as err:
+        raise RuntimeError(
+            "Input parsed file does not seem to have the expected structure."
+        ) from err
 
 
-def get_aliases(parsed_file):
+def get_model_aliases(parsed_file: Tree) -> dict[str, list[str]]:
+    """
+    Return a dictionary of all model alias definitions in the input parsed file, of the form
+    "ModelAlias <NAME> <MODEL_NAME> <MODEL_OPTIONS>", as {'NAME1': [MODEL_NAME, MODEL_OPTION1, MODEL_OPTION2,...],
+    'NAME2': [MODEL_NAME, ...]...}.
+
+    Parameters
+    ----------
+    parsed_file: Lark Tree instance
+        Input parsed file.
+
+    """
+    try:
+        model_alias_tokens = [
+            list(t.scan_values(lambda v: isinstance(v, Token)))
+            for t in parsed_file.find_data("model_alias")
+        ]
+
+        return {
+            model_alias[0].value: [model.value for model in model_alias[1:]]
+            for model_alias in model_alias_tokens
+        }
+    except Exception as err:
+        raise RuntimeError(
+            "Input parsed file does not seem to have the expected structure."
+        ) from err
+
+
+def get_aliases(parsed_file: Tree) -> dict[str, str]:
     """
     Return a dictionary of all aliases in the input parsed file, of the form
     "Alias <NAME> <ALIAS>", as {'NAME1': ALIAS1, 'NAME2': ALIAS2, ...}.
@@ -1258,19 +1462,18 @@ def get_aliases(parsed_file):
     parsed_file: Lark Tree instance
         Input parsed file.
     """
-    if not isinstance(parsed_file, Tree):
-        raise RuntimeError("Input not an instance of a Tree!")
-
     try:
         return {
             tree.children[0].children[0].value: tree.children[1].children[0].value
             for tree in parsed_file.find_data("alias")
         }
-    except Exception:
-        RuntimeError("Input parsed file does not seem to have the expected structure.")
+    except Exception as err:
+        raise RuntimeError(
+            "Input parsed file does not seem to have the expected structure."
+        ) from err
 
 
-def get_charge_conjugate_defs(parsed_file):
+def get_charge_conjugate_defs(parsed_file: Tree) -> dict[str, str]:
     """
     Return a dictionary of all charge conjugate definitions
     in the input parsed file, of the form "ChargeConj <PARTICLE> <CC_PARTICLE>",
@@ -1281,19 +1484,18 @@ def get_charge_conjugate_defs(parsed_file):
     parsed_file: Lark Tree instance
         Input parsed file.
     """
-    if not isinstance(parsed_file, Tree):
-        raise RuntimeError("Input not an instance of a Tree!")
-
     try:
         return {
             tree.children[0].children[0].value: tree.children[1].children[0].value
             for tree in parsed_file.find_data("chargeconj")
         }
-    except Exception:
-        RuntimeError("Input parsed file does not seem to have the expected structure.")
+    except Exception as err:
+        raise RuntimeError(
+            "Input parsed file does not seem to have the expected structure."
+        ) from err
 
 
-def get_pythia_definitions(parsed_file):
+def get_pythia_definitions(parsed_file: Tree) -> dict[str, str | float]:
     """
     Return a dictionary of all Pythia definitions in the input parsed file,
     of the form
@@ -1307,10 +1509,8 @@ def get_pythia_definitions(parsed_file):
     parsed_file: Lark Tree instance
         Input parsed file.
     """
-    if not isinstance(parsed_file, Tree):
-        raise RuntimeError("Input not an instance of a Tree!")
 
-    def str_or_float(arg):
+    def str_or_float(arg: str) -> str | float:
         try:
             return float(arg)
         except Exception:
@@ -1323,11 +1523,15 @@ def get_pythia_definitions(parsed_file):
             ): str_or_float(tree.children[2].value)
             for tree in parsed_file.find_data("pythia_def")
         }
-    except Exception:
-        RuntimeError("Input parsed file does not seem to have the expected structure.")
+    except Exception as err:
+        raise RuntimeError(
+            "Input parsed file does not seem to have the expected structure."
+        ) from err
 
 
-def get_jetset_definitions(parsed_file):
+def get_jetset_definitions(
+    parsed_file: Tree,
+) -> dict[str, dict[int, int | float | str]]:
     """
     Return a dictionary of all JETSET definitions in the input parsed file,
     of the form
@@ -1341,9 +1545,6 @@ def get_jetset_definitions(parsed_file):
     parsed_file: Lark Tree instance
         Input parsed file.
     """
-    if not isinstance(parsed_file, Tree):
-        raise RuntimeError("Input not an instance of a Tree!")
-
     get_jetsetpar = re.compile(
         r"""
     ^                                     # Beginning of string
@@ -1353,7 +1554,7 @@ def get_jetset_definitions(parsed_file):
         re.VERBOSE,
     )
 
-    def to_int_or_float(n):
+    def to_int_or_float(n: str) -> int | float | str:
         """
         Trivial helper function to convert the parsed (as strings)
         JETSET parameters into what they are, namely integers or floats.
@@ -1368,10 +1569,10 @@ def get_jetset_definitions(parsed_file):
                 return n
 
     try:
-        dict_params = {}  # type: dict
+        dict_params: dict[str, dict[int, int | float | str]] = {}
         for tree in parsed_file.find_data("jetset_def"):
             # This will throw an error if match is None
-            param = get_jetsetpar.match(tree.children[0].value).groupdict()  # type: ignore
+            param = get_jetsetpar.match(tree.children[0].value).groupdict()  # type: ignore[union-attr]
             try:
                 dict_params[param["pname"]].update(
                     {int(param["pnumber"]): to_int_or_float(tree.children[1].value)}
@@ -1381,11 +1582,15 @@ def get_jetset_definitions(parsed_file):
                     int(param["pnumber"]): to_int_or_float(tree.children[1].value)
                 }
         return dict_params
-    except Exception:
-        RuntimeError("Input parsed file does not seem to have the expected structure.")
+    except Exception as err:
+        raise RuntimeError(
+            "Input parsed file does not seem to have the expected structure."
+        ) from err
 
 
-def get_lineshape_definitions(parsed_file):
+def get_lineshape_definitions(
+    parsed_file: Tree,
+) -> list[tuple[list[str], int]]:
     """
     Return a list of all SetLineshapePW definitions in the input parsed file,
     of the form
@@ -1400,9 +1605,6 @@ def get_lineshape_definitions(parsed_file):
     parsed_file: Lark Tree instance
         Input parsed file.
     """
-    if not isinstance(parsed_file, Tree):
-        raise RuntimeError("Input not an instance of a Tree!")
-
     try:
         d = []
         for tree in parsed_file.find_data("setlspw"):
@@ -1410,11 +1612,13 @@ def get_lineshape_definitions(parsed_file):
             val = int(tree.children[3].children[0].value)
             d.append((particles, val))
         return d
-    except Exception:
-        RuntimeError("Input parsed file does not seem to have the expected structure.")
+    except Exception as err:
+        raise RuntimeError(
+            "Input parsed file does not seem to have the expected structure."
+        ) from err
 
 
-def get_global_photos_flag(parsed_file):
+def get_global_photos_flag(parsed_file: Tree) -> int:
     """
     Return a boolean-like PhotosEnum enum specifying whether or not PHOTOS
     has been enabled.
@@ -1432,14 +1636,11 @@ def get_global_photos_flag(parsed_file):
     out: PhotosEnum, default=PhotosEnum.no
         PhotosEnum.yes / PhotosEnum.no if PHOTOS enabled / disabled
     """
-    if not isinstance(parsed_file, Tree):
-        raise RuntimeError("Input not an instance of a Tree!")
-
     # Check if the flag is not set more than once, just in case ...
     tree = tuple(parsed_file.find_data("global_photos"))
     if not tree:
         return PhotosEnum.no
-    elif len(tree) > 1:
+    if len(tree) > 1:
         warnings.warn("PHOTOS flag re-set! Using flag set in last ...")
 
     end_item = tree[-1]
@@ -1447,5 +1648,7 @@ def get_global_photos_flag(parsed_file):
     try:
         val = end_item.children[0].data
         return PhotosEnum.yes if val == "yes" else PhotosEnum.no
-    except Exception:
-        RuntimeError("Input parsed file does not seem to have the expected structure.")
+    except Exception as err:
+        raise RuntimeError(
+            "Input parsed file does not seem to have the expected structure."
+        ) from err

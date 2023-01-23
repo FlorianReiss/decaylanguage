@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2021, Eduardo Rodrigues and Henry Schreiner.
+# Copyright (c) 2018-2023, Eduardo Rodrigues and Henry Schreiner.
 #
 # Distributed under the 3-clause BSD license, see accompanying file LICENSE
 # or https://github.com/scikit-hep/decaylanguage for details.
@@ -8,7 +7,8 @@
 Collection of enums and info to help characterising .dec decay files.
 """
 
-# Backport needed if Python 2 is used
+from __future__ import annotations
+
 from enum import IntEnum
 
 
@@ -40,6 +40,7 @@ known_decay_models = (
     "GENERIC_DALITZ",
     "GOITY_ROBERTS",
     "HELAMP",
+    "HQET3",
     "HQET2",
     "HQET",
     "ISGW2",
@@ -95,4 +96,5 @@ known_decay_models = (
     "VVP",
     "VVS_PWAVE",
     "YMSTOYNSPIPICLEO",
+    "YMSTOYNSPIPICLEOBOOST",
 )

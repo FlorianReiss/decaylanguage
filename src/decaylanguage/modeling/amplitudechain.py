@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2021, Eduardo Rodrigues and Henry Schreiner.
+# Copyright (c) 2018-2023, Eduardo Rodrigues and Henry Schreiner.
 #
 # Distributed under the 3-clause BSD license, see accompanying file LICENSE
 # or https://github.com/scikit-hep/decaylanguage for details.
@@ -8,7 +7,8 @@
 A class representing a set of decays. Can be subclassed to provide custom converters.
 """
 
-from __future__ import absolute_import, division, print_function
+
+from __future__ import annotations
 
 import os
 import re
@@ -54,8 +54,8 @@ class AmplitudeChain(ModelDecay):
     name = attr.ib(None)
 
     # Class members keep track of additions
-    all_particles = set()  # type: ignore
-    final_particles = set()  # type: ignore
+    all_particles = set()
+    final_particles = set()
 
     # This is set class-wide, and only used when a line is made
     cartesian = False
@@ -119,7 +119,7 @@ class AmplitudeChain(ModelDecay):
 
         """
 
-        # If the Tree has daugthers, run on those
+        # If the Tree has daughters, run on those
         if self.daughters:
             dlist = [d.expand_lines(linelist) for d in self.daughters]
             retlist = []
@@ -145,14 +145,14 @@ class AmplitudeChain(ModelDecay):
     def ls_enum(self):
         if not self.lineshape:
             return LS.RBW
-        elif self.lineshape == "GSpline.EFF":
+        if self.lineshape == "GSpline.EFF":
             return LS.GSpline
-        elif self.lineshape.startswith("kMatrix"):
+        if self.lineshape.startswith("kMatrix"):
             return LS.kMatrix
-        elif self.lineshape.startswith("FOCUS"):
+        if self.lineshape.startswith("FOCUS"):
             return LS.FOCUS
-        else:
-            raise RuntimeError("Unimplemented lineshape {}".format(self.lineshape))
+
+        raise RuntimeError(f"Unimplemented lineshape {self.lineshape}")
 
     @property
     def full_amp(self):
@@ -171,8 +171,7 @@ class AmplitudeChain(ModelDecay):
         max_spin = S + s1 + s2
         if not conserveParity:
             return (min_spin, max_spin)
-        else:
-            raise RuntimeError("Strong decays not implemented yet")
+        raise RuntimeError("Strong decays not implemented yet")
 
     @property
     def L(self):
@@ -184,7 +183,7 @@ class AmplitudeChain(ModelDecay):
     def _get_html(self):
         name = self.particle.html_name
         name = re.sub(
-            r'<SPAN STYLE="text-decoration:overline">(.*)</SPAN>', u"\\1\u0305", name
+            r'<SPAN STYLE="text-decoration:overline">(.*)</SPAN>', "\\1\u0305", name
         )
 
         if self.spinfactor or self.lineshape:
@@ -224,7 +223,7 @@ class AmplitudeChain(ModelDecay):
 
         # Read the file in, ignore empty lines and comments
         if filename is not None:
-            with open(filename) as f:
+            with open(filename, encoding="utf_8") as f:
                 text = f.read()
         elif text is None:
             raise RuntimeError("Must have filename or text")

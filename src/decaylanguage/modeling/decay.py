@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2021, Eduardo Rodrigues and Henry Schreiner.
+# Copyright (c) 2018-2023, Eduardo Rodrigues and Henry Schreiner.
 #
 # Distributed under the 3-clause BSD license, see accompanying file LICENSE
 # or https://github.com/scikit-hep/decaylanguage for details.
@@ -9,7 +8,7 @@ A general base class representing decays.
 """
 
 
-from __future__ import absolute_import, division, print_function
+from __future__ import annotations
 
 import warnings
 from itertools import product
@@ -26,14 +25,14 @@ except ImportError:
 
 
 @attr.s(slots=True)
-class ModelDecay(object):
+class ModelDecay:
     """
     This describes a decay very generally, with search and print features.
-    Subclassed for futher usage.
+    Subclassed for further usage.
     """
 
     particle = attr.ib()
-    daughters = attr.ib([], converter=lambda x: x if x else [])  # type: ignore
+    daughters = attr.ib([], converter=lambda x: x if x else [])
     name = attr.ib(None)
 
     def __attrs_post_init__(self):
@@ -85,8 +84,7 @@ class ModelDecay(object):
         """
         if self.daughters:
             return [d.structure for d in self.daughters]
-        else:
-            return self.particle
+        return self.particle
 
     def list_structure(self, final_states):
         """
@@ -123,5 +121,12 @@ class ModelDecay(object):
             self._add_nodes(d)
             return d
 
-        def _repr_svg_(self):
-            return self._make_graphviz()._repr_svg_()
+        def _repr_mimebundle_(self, include=None, exclude=None, **kwargs):
+            try:
+                return self._make_graphviz()._repr_mimebundle_(
+                    include=include, exclude=exclude, **kwargs
+                )
+            except AttributeError:
+                return {
+                    "image/svg+xml": self._make_graphviz()._repr_svg_()
+                }  # for graphviz < 0.19

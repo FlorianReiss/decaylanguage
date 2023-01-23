@@ -1,23 +1,95 @@
 [build-system]
 requires = [
-    "setuptools>=42",
-    "wheel",
-    "setuptools_scm[toml]>=3.4"
+    "hatchling",
+    "hatch-vcs"
 ]
-build-backend = "setuptools.build_meta"
+build-backend = "hatchling.build"
 
-[tool.setuptools_scm]
-write_to = "src/decaylanguage/_version.py"
+[project]
+name = "decaylanguage"
+description = "A language to describe, manipulate and convert particle decays"
+readme = "README.md"
+requires-python = ">=3.7"
+authors = [
+    { name = "Eduardo Rodrigues", email = "eduardo.rodrigues@cern.ch" },
+    { name = "Henry Schreiner", email = "henryfs@princeton.edu" },
+]
+maintainers = [
+    { name = "Scikit-HEP", email = "scikit-hep-admins@googlegroups.com" },
+]
+keywords = [
+    "HEP",
+    "chain",
+    "decay",
+    "particle",
+    "representation",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: BSD License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.7",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering",
+]
+dependencies = [
+    "attrs>=19.2",
+    "deprecated",
+    "graphviz>=0.12.0",
+    "importlib-resources>=2.0;python_version<\"3.9\"",
+    "lark>=1.0.0",
+    "numpy>=1.12",
+    "pandas>=0.22",
+    "particle==0.21.*",
+    "plumbum>=1.6.9",
+    "typing-extensions;python_version<\"3.8\"",
+]
+dynamic = ["version"]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=6",
+]
+docs = [
+    "sphinx-rtd-theme>=0.5.0",
+    "sphinx>=4",
+]
+test = [
+    "pytest-cov",
+    "pytest>=6",
+]
+
+[project.urls]
+Homepage = "https://github.com/scikit-hep/decaylanguage"
+
+
+[tool.hatch]
+version.source = "vcs"
+build.hooks.vcs.version-file = "src/decaylanguage/_version.py"
 
 
 [tool.isort]
 profile = "black"
+add_imports = [
+    "from __future__ import annotations",
+]
+
 
 [tool.mypy]
 files = "src"
-python_version = "3.6"
+exclude = "src/decaylanguage/(data|modeling)"
+python_version = "3.9"
 warn_unused_configs = true
-check_untyped_defs = true
+warn_unused_ignores = true
+strict = true
 
 [[tool.mypy.overrides]]
 module = [
@@ -25,10 +97,53 @@ module = [
     "graphviz",
     "pandas",
     "plumbum",
-    "decaylanguage._version",
 ]
 ignore_missing_imports = true
 
 
-# PyTest config cannot be moved here until Python 2 support is dropped and
-# PyTest 6+ can be required.
+[tool.pytest.ini_options]
+minversion = "6.0"
+testpaths = ["tests"]
+addopts = [
+    "-ra",
+    "--doctest-modules",
+    "--doctest-glob=\\*.rst",
+    "--strict-markers",
+    "--strict-config",
+]
+log_cli_level = "DEBUG"
+filterwarnings = [
+    "error",
+]
+
+
+[tool.pylint]
+master.py-version = "3.7"
+reports.output-format = "colorized"
+similarities.ignore-imports = "yes"
+master.jobs = "0"
+messages_control.enable = [
+    "useless-suppression",
+]
+messages_control.disable = [
+    "fixme",
+    "line-too-long",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "missing-module-docstring",
+    "too-few-public-methods",
+    "too-many-arguments",
+    "too-many-branches",
+    "too-many-instance-attributes",
+    "too-many-lines",
+    "too-many-locals",
+    "too-many-public-methods",
+    "too-many-return-statements",
+    "too-many-statements",
+    "wrong-import-position",
+    "invalid-name",
+    "consider-using-f-string",  # TODO
+    "broad-except",  # TODO
+    "protected-access",  # TODO
+    "no-member",  # TODO
+]

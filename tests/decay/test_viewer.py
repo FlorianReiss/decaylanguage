@@ -1,16 +1,12 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2021, Eduardo Rodrigues and Henry Schreiner.
+# Copyright (c) 2018-2023, Eduardo Rodrigues and Henry Schreiner.
 #
 # Distributed under the 3-clause BSD license, see accompanying file LICENSE
 # or https://github.com/scikit-hep/decaylanguage for details.
 
 
-from __future__ import absolute_import
+from __future__ import annotations
 
-try:
-    from pathlib2 import Path
-except ImportError:
-    from pathlib import Path
+from pathlib import Path
 
 import pytest
 
@@ -133,4 +129,5 @@ def test_graphs_with_EvtGen_specific_names():
     dcv = DecayChainViewer(chain)
 
     assert "(cs)<SUB>0</SUB>" in dcv.to_string()  # not 'cs_0' ;-)
-    assert "&Xi;<SUB>c</SUB><SUP>0</SUP>" in dcv.to_string()
+    assert "&#x039e;<SUB>b</SUB><SUP>-</SUP>" in dcv.to_string()
+    assert "&#x039e;<SUB>c</SUB><SUP>0</SUP>" in dcv.to_string()

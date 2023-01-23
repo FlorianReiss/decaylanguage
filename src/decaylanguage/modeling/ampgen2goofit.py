@@ -1,6 +1,5 @@
 #!/usr/bin/env python
-# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2021, Eduardo Rodrigues and Henry Schreiner.
+# Copyright (c) 2018-2023, Eduardo Rodrigues and Henry Schreiner.
 #
 # Distributed under the 3-clause BSD license, see accompanying file LICENSE
 # or https://github.com/scikit-hep/decaylanguage for details.
@@ -10,14 +9,15 @@ This is a function that takes a filename and either prints out or returns
 a string output with the converted set of decay chains and variables.
 """
 
-from __future__ import absolute_import, division, print_function
+
+from __future__ import annotations
 
 import datetime
 from functools import partial
+from io import StringIO
 
 from particle import SpinType
 from plumbum import colors
-from six import StringIO
 
 from decaylanguage.modeling.goofit import GooFitChain, SF_4Body
 
@@ -27,7 +27,7 @@ def ampgen2goofit(filename, ret_output=False):
         output = StringIO()
         printer = partial(print, file=output)
     else:
-        printer = print  # type: ignore
+        printer = print
 
     lines, all_states = GooFitChain.read_ampgen(str(filename))
 
@@ -48,7 +48,7 @@ def ampgen2goofit(filename, ret_output=False):
             for p in sorted(GooFitChain.all_particles)
             if p.spin_type == spintype
         ]
-        printer("{spintype.name:>12}:".format(spintype=spintype), *ps)
+        printer(f"{spintype.name:>12}:", *ps)
 
     printer("\n")
     for n, line in enumerate(lines):
@@ -62,7 +62,7 @@ def ampgen2goofit(filename, ret_output=False):
 
     printer(colors.bold & colors.green | "\n\nAll discovered spin configurations:")
 
-    for line in sorted({line.spindetails() for line in lines}):
+    for line in sorted({iline.spindetails() for iline in lines}):
         printer(colors.green | line)
 
     printer(colors.bold & colors.blue | "\n\nAll known spin configurations:")
@@ -86,3 +86,4 @@ def ampgen2goofit(filename, ret_output=False):
 
     if ret_output:
         return output.getvalue()
+    return None

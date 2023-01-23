@@ -4,13 +4,13 @@
 
 [![Scikit-HEP](https://scikit-hep.org/assets/images/Scikit--HEP-Project-blue.svg)](https://scikit-hep.org/)
 [![PyPI Package latest release](https://img.shields.io/pypi/v/decaylanguage.svg)](https://pypi.python.org/pypi/decaylanguage)
-[![Conda latest release](https://img.shields.io/conda/vn/conda-forge/decaylanguage.svg)](https://anaconda.org/conda-forge/decaylanguage)
+[![Conda latest release](https://img.shields.io/conda/vn/conda-forge/decaylanguage.svg)](https://github.com/conda-forge/decaylanguage-feedstock)
 [![Supported versions](https://img.shields.io/pypi/pyversions/decaylanguage.svg)](https://pypi.python.org/pypi/decaylanguage)
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.3257423.svg)](https://doi.org/10.5281/zenodo.3257423)
 
 [![GitHub Actions Status: CI](https://github.com/scikit-hep/decaylanguage/workflows/CI/badge.svg)](https://github.com/scikit-hep/decaylanguage/actions)
 [![Code Coverage](https://codecov.io/gh/scikit-hep/decaylanguage/graph/badge.svg?branch=master)](https://codecov.io/gh/scikit-hep/decaylanguage?branch=master)
-[![Documentation Status](https://readthedocs.org/projects/decaylanguage/badge/?style=flat)](https://readthedocs.org/projects/decaylanguage)
+[![Documentation Status](https://readthedocs.org/projects/decaylanguage/badge/?style=flat)](https://decaylanguage.readthedocs.io)
 [![Code style: black](https://img.shields.io/badge/code%20style-black-000000.svg)](https://github.com/psf/black)
 
 [![Binder demo](https://mybinder.org/badge_logo.svg)](https://mybinder.org/v2/gh/scikit-hep/decaylanguage/master?urlpath=lab/tree/notebooks/DecayLanguageDemo.ipynb)
@@ -34,7 +34,9 @@ pip install decaylanguage
 ```
 
 You can use a virtual environment through pipenv or with `--user` if you know
-what those are. [Python 2.7 and 3.4+](http://docs.python-guide.org/en/latest/starting/installation) are supported.
+what those are. [Python
+3.7+](http://docs.python-guide.org/en/latest/starting/installation) supported
+(see version 0.12 for Python 2 & 3.5 support, 0.14 for Python 3.6 support).
 
 <details><summary>Dependencies: (click to expand)</summary><p>
 
@@ -43,18 +45,15 @@ Required and compatibility dependencies will be automatically installed by pip.
 ### Required dependencies:
 
 -   [particle](https://github.com/scikit-hep/particle): PDG particle data and identification codes
--   [Numpy](https://scipy.org/install.html): The numerical library for Python
+-   [NumPy](https://scipy.org/install.html): The numerical library for Python
 -   [pandas](https://pandas.pydata.org/): Tabular data in Python
 -   [attrs](https://github.com/python-attrs/attrs): DataClasses for Python
 -   [plumbum](https://github.com/tomerfiliba/plumbum): Command line tools
--   [lark-parser](https://github.com/lark-parser/lark): A modern parsing library for Python
+-   [lark](https://github.com/lark-parser/lark): A modern parsing library for Python
 -   [graphviz](https://gitlab.com/graphviz/graphviz/) to render (DOT language) graph
     descriptions and visualizations of decay chains.
 
 ### Python compatibility:
--   [six](https://github.com/benjaminp/six): Compatibility library
--   [pathlib2](https://github.com/mcmtroffaes/pathlib2) backport if using Python 2.7
--   [enum34](https://bitbucket.org/stoneleaf/enum34) backport if using Python /< 3.5
 -   [importlib_resources](http://importlib-resources.readthedocs.io/en/latest/) backport if using Python /< 3.7
 </p></details>
 
@@ -64,7 +63,7 @@ Required and compatibility dependencies will be automatically installed by pip.
 The [Binder demo](https://mybinder.org/v2/gh/scikit-hep/decaylanguage/master?urlpath=lab/tree/notebooks/DecayLanguageDemo.ipynb)
 is an excellent way to get started with `DecayLanguage`.
 
-This is a quick user guide. For a full API docs, go [here](https://decaylanguage.readthedocs.io/en/latest/)
+This is a quick user guide. For a full API docs, go [here](https://decaylanguage.readthedocs.io)
 (note that it is presently work-in-progress).
 
 ### What is DecayLanguage?
@@ -103,7 +102,7 @@ parser.list_decay_mother_names()
 ```
 
 A copy of the master DECAY.DEC file used by the LHCb experiment is provided
-[here](https://github.com/scikit-hep/decaylanguage/tree/master/decaylanguage/data)
+[here](https://github.com/scikit-hep/decaylanguage/tree/master/src/decaylanguage/data)
 for convenience.
 
 The `DecFileParser` class implements a series of methods giving access to all
@@ -160,8 +159,8 @@ The class `DecayChainViewer` allows the visualization of parsed decay chains:
 ```python
 from decaylanguage import DecayChainViewer
 
-# Build the (dictionary-like) D*+ decay chain representation setting the D+ and D0 mesons to stable,
-# to avoid too cluttered an image
+# Build the (dictionary-like) D*+ decay chain representation setting the
+# D+ and D0 mesons to stable, to avoid too cluttered an image
 d = dfp.build_decay_chains('D*+', stable_particles=('D+', 'D0'))
 DecayChainViewer(d)  # works in a notebook
 ```
@@ -176,13 +175,13 @@ dcv = DecayChainViewer(d)
 dcv.graph
 ```
 
-making all `graphviz.dot.Digraph` class properties and methods available, such as
+making all `graphviz.Digraph` class properties and methods available, such as
 
 ```python
 dcv.graph.render(filename='mygraph', format='pdf', view=True, cleanup=True)
 ```
 
-In the same way, all `graphviz.dot.Digraph` class attributes are settable
+In the same way, all `graphviz.Digraph` class attributes are settable
 upon instantiation of `DecayChainViewer`:
 
 ```python
@@ -258,6 +257,32 @@ GooFitChain. To use the [GooFit] output, type from the shell:
 ```bash
 python -m decaylanguage -G goofit myinput.opts
 ```
+
+## Contributors
+
+We hereby acknowledge the contributors that made this project possible ([emoji key](https://allcontributors.org/docs/en/emoji-key)):
+<!-- ALL-CONTRIBUTORS-LIST:START - Do not remove or modify this section -->
+<!-- prettier-ignore-start -->
+<!-- markdownlint-disable -->
+<table>
+  <tbody>
+    <tr>
+      <td align="center"><a href="http://cern.ch/eduardo.rodrigues"><img src="https://avatars.githubusercontent.com/u/5013581?v=4?s=100" width="100px;" alt="Eduardo Rodrigues"/><br /><sub><b>Eduardo Rodrigues</b></sub></a><br /><a href="#maintenance-eduardo-rodrigues" title="Maintenance">🚧</a> <a href="https://github.com/scikit-hep/decaylanguage/commits?author=eduardo-rodrigues" title="Code">💻</a> <a href="https://github.com/scikit-hep/decaylanguage/commits?author=eduardo-rodrigues" title="Documentation">📖</a></td>
+      <td align="center"><a href="http://iscinumpy.dev"><img src="https://avatars.githubusercontent.com/u/4616906?v=4?s=100" width="100px;" alt="Henry Schreiner"/><br /><sub><b>Henry Schreiner</b></sub></a><br /><a href="#maintenance-henryiii" title="Maintenance">🚧</a> <a href="https://github.com/scikit-hep/decaylanguage/commits?author=henryiii" title="Code">💻</a> <a href="https://github.com/scikit-hep/decaylanguage/commits?author=henryiii" title="Documentation">📖</a></td>
+      <td align="center"><a href="https://github.com/yipengsun"><img src="https://avatars.githubusercontent.com/u/33738176?v=4?s=100" width="100px;" alt="Yipeng Sun"/><br /><sub><b>Yipeng Sun</b></sub></a><br /><a href="https://github.com/scikit-hep/decaylanguage/commits?author=yipengsun" title="Code">💻</a></td>
+      <td align="center"><a href="https://github.com/chrisburr"><img src="https://avatars.githubusercontent.com/u/5220533?v=4?s=100" width="100px;" alt="Chris Burr"/><br /><sub><b>Chris Burr</b></sub></a><br /><a href="https://github.com/scikit-hep/decaylanguage/commits?author=chrisburr" title="Documentation">📖</a></td>
+      <td align="center"><a href="https://www.lieret.net"><img src="https://avatars.githubusercontent.com/u/13602468?v=4?s=100" width="100px;" alt="Kilian Lieret"/><br /><sub><b>Kilian Lieret</b></sub></a><br /><a href="https://github.com/scikit-hep/decaylanguage/commits?author=klieret" title="Documentation">📖</a></td>
+      <td align="center"><a href="https://github.com/sognetic"><img src="https://avatars.githubusercontent.com/u/10749132?v=4?s=100" width="100px;" alt="Moritz Bauer"/><br /><sub><b>Moritz Bauer</b></sub></a><br /><a href="https://github.com/scikit-hep/decaylanguage/commits?author=sognetic" title="Code">💻</a></td>
+    </tr>
+  </tbody>
+</table>
+
+<!-- markdownlint-restore -->
+<!-- prettier-ignore-end -->
+
+<!-- ALL-CONTRIBUTORS-LIST:END -->
+
+This project follows the [all-contributors](https://github.com/all-contributors/all-contributors) specification.
 
 ## Acknowledgements
 

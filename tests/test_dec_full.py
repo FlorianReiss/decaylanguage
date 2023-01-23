@@ -1,8 +1,9 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2021, Eduardo Rodrigues and Henry Schreiner.
+# Copyright (c) 2018-2023, Eduardo Rodrigues and Henry Schreiner.
 #
 # Distributed under the 3-clause BSD license, see accompanying file LICENSE
 # or https://github.com/scikit-hep/decaylanguage for details.
+
+from __future__ import annotations
 
 import pytest
 from lark import Lark, Transformer, Tree
@@ -97,7 +98,7 @@ def test_dec_full():
     txt = data.basepath.joinpath("DECAY_LHCB.DEC").read_text()
     grammar = data.basepath.joinpath("decfile.lark").read_text()
 
-    la = Lark(grammar, parser="lalr", lexer="standard")  # , transformer = TreeToDec())
+    la = Lark(grammar, parser="lalr", lexer="auto")  # , transformer = TreeToDec())
 
     parsed = la.parse(txt)
     assert bool(parsed)

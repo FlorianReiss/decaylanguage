@@ -1,12 +1,12 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2021, Eduardo Rodrigues and Henry Schreiner.
+# Copyright (c) 2018-2023, Eduardo Rodrigues and Henry Schreiner.
 #
 # Distributed under the 3-clause BSD license, see accompanying file LICENSE
 # or https://github.com/scikit-hep/decaylanguage for details.
 
-from __future__ import absolute_import
 
-import sys
+from __future__ import annotations
+
+from functools import lru_cache
 
 from particle import Particle
 from particle.converters import (
@@ -16,18 +16,11 @@ from particle.converters import (
 )
 from particle.exceptions import MatchingIDNotFound
 
-if sys.version_info < (3,):
-    from cachetools import LFUCache, cached
-
-    cacher = cached(cache=LFUCache(maxsize=64))
-else:
-    from functools import lru_cache
-
-    cacher = lru_cache(maxsize=64)
+cacher = lru_cache(maxsize=64)
 
 
 @cacher
-def charge_conjugate_name(name, pdg_name=False):
+def charge_conjugate_name(name: str, pdg_name: bool = False) -> str:
     """
     Return the charge-conjugate particle name matching the given name.
     If no matching is found, return "ChargeConj(pname)".
@@ -62,7 +55,7 @@ def charge_conjugate_name(name, pdg_name=False):
             # Convert the EvtGen name back to a PDG name, to match input type
             return EvtGen2PDGNameMap[ccname]
         except MatchingIDNotFound:  # Catch issue in PDG2EvtGenNameMap matching
-            return "ChargeConj({})".format(name)
+            return f"ChargeConj({name})"
 
     # Dealing only with EvtGen names at this stage
     try:
@@ -71,4 +64,4 @@ def charge_conjugate_name(name, pdg_name=False):
         try:
             return EvtGenName2PDGIDBiMap[-EvtGenName2PDGIDBiMap[name]]
         except Exception:
-            return "ChargeConj({})".format(name)
+            return f"ChargeConj({name})"

@@ -1,5 +1,4 @@
-# -*- coding: utf-8 -*-
-# Copyright (c) 2018-2021, Eduardo Rodrigues and Henry Schreiner.
+# Copyright (c) 2018-2023, Eduardo Rodrigues and Henry Schreiner.
 #
 # Distributed under the 3-clause BSD license, see accompanying file LICENSE
 # or https://github.com/scikit-hep/decaylanguage for details.
@@ -8,7 +7,8 @@
 This is a GooFit adaptor for amplitude chain.
 """
 
-from __future__ import absolute_import, division, print_function
+
+from __future__ import annotations
 
 from enum import Enum
 
@@ -57,8 +57,7 @@ known_spinfactors = {
 def sprint(stype):
     if stype in {SpinType.PseudoTensor, SpinType.PseudoScalar}:
         return stype.name[6].lower()
-    else:
-        return stype.name[0]
+    return stype.name[0]
 
 
 class DecayStructure(Enum):
@@ -69,16 +68,14 @@ class DecayStructure(Enum):
 class GooFitChain(AmplitudeChain):
     __slots__ = ()
 
-    pars = None  # type: pd.DataFrame
-    consts = None  # type: pd.DataFrame
+    pars: pd.DataFrame = None
+    consts: pd.DataFrame = None
 
     @classmethod
     def make_intro(cls, all_states):
 
-        header = "    // Event type: {} ->  ".format(all_states[0])
-        header += "   ".join(
-            "{} ({})".format(b, a) for a, b in enumerate(all_states[1:])
-        )
+        header = f"    // Event type: {all_states[0]} ->  "
+        header += "   ".join(f"{b} ({a})" for a, b in enumerate(all_states[1:]))
 
         header += """\n
     std::vector<std::vector<Lineshape*>> line_factor_list;
@@ -120,27 +117,24 @@ class GooFitChain(AmplitudeChain):
     def decay_structure(self):
         if len(self[0]) == 2 and len(self[1]) == 2:
             return DecayStructure.FF_12_34
-        else:
-            return DecayStructure.FF_1_2_34
+        return DecayStructure.FF_1_2_34
 
     @property
     def formfactor(self):
         norm = self.decay_structure == DecayStructure.FF_12_34
         if self.L == 0:
             return None
-        elif self.L == 1:
+        if self.L == 1:
             return SF_4Body.FF_12_34_L1 if norm else SF_4Body.FF_123_4_L1
-        elif self.L == 2:
+        if self.L == 2:
             return SF_4Body.FF_12_34_L2 if norm else SF_4Body.FF_123_4_L2
-        else:
-            raise NotImplementedError(
-                "L = {self.L} is not implemented".format(self=self)
-            )
+
+        raise NotImplementedError(f"L = {self.L} is not implemented")
 
     def spindetails(self):
         if self.decay_structure == DecayStructure.FF_12_34:
-            a = "{}1".format(sprint(self[0].particle.spin_type))
-            b = "{}2".format(sprint(self[1].particle.spin_type))
+            a = f"{sprint(self[0].particle.spin_type)}1"
+            b = f"{sprint(self[1].particle.spin_type)}2"
             return (
                 "Dto{a}{b}_{a}toP1P2_{b}toP3P4"
                 + (
@@ -149,18 +143,18 @@ class GooFitChain(AmplitudeChain):
                     else ""
                 )
             ).format(self=self, a=a, b=b)
+
+        a = f"{sprint(self[0].particle.spin_type)}1"
+        if self[0].daughters:
+            b = f"{sprint(self[0][0].particle.spin_type)}2"
         else:
-            a = "{}1".format(sprint(self[0].particle.spin_type))
-            if self[0].daughters:
-                b = "{}2".format(sprint(self[0][0].particle.spin_type))
-            else:
-                raise LineFailure(self, "{} has no daughters".format(self[0]))
-            wave = (
-                "{self[0].spinfactor}wave".format(self=self)
-                if self[0].spinfactor and self[0].spinfactor != "S"
-                else ""
-            )
-            return "Dto{a}P1_{a}to{b}P2{wave}_{b}toP3P4".format(a=a, b=b, wave=wave)
+            raise LineFailure(self, f"{self[0]} has no daughters")
+        wave = (
+            "{self[0].spinfactor}wave".format(self=self)
+            if self[0].spinfactor and self[0].spinfactor != "S"
+            else ""
+        )
+        return "Dto{a}P1_{a}to{b}P2{wave}_{b}toP3P4".format(a=a, b=b, wave=wave)
 
     @property
     def spinfactors(self):
@@ -172,7 +166,7 @@ class GooFitChain(AmplitudeChain):
 
         raise LineFailure(
             self,
-            "Spinfactors not currenly included!: {spindet}".format(
+            "Spinfactors not currently included!: {spindet}".format(
                 spindet=self.spindetails()
             ),
         )
@@ -237,9 +231,7 @@ class GooFitChain(AmplitudeChain):
                     + programmatic_name(spline)
                     + "_SplineArr {{\n"
                 )
-                header += strip_pararray(
-                    GooFitChain.pars, "{spline}::Spline::Gamma::".format(spline=spline)
-                )
+                header += strip_pararray(GooFitChain.pars, f"{spline}::Spline::Gamma::")
                 header += "\n    }};\n"
 
         f_scatt = GooFitChain.pars.index[GooFitChain.pars.index.str.contains("f_scatt")]
@@ -254,7 +246,7 @@ class GooFitChain(AmplitudeChain):
 
             def convert(x):
                 i = x.str.split("_").str[0]
-                j = x.str.split("_").str[1].map(lambda x: names.index(x))
+                j = x.str.split("_").str[1].map(names.index)
                 return i.astype(int) * 6 + j.astype(int)
 
             header += "\n    std::array<Variable, 5*6> IS_poles {{\n"
@@ -275,16 +267,10 @@ class GooFitChain(AmplitudeChain):
             return 'new Lineshapes::RBW("{name}", {par}_M, {par}_W, {L}, M_{a}{b}, FF::BL2)'.format(
                 name=name, par=par, L=L, a=a, b=b
             )
-        elif self.ls_enum == LS.GSpline:
-            min = self.__class__.consts.loc[
-                "{self.name}::Spline::Min".format(self=self), "value"
-            ]
-            max = self.__class__.consts.loc[
-                "{self.name}::Spline::Max".format(self=self), "value"
-            ]
-            N = self.__class__.consts.loc[
-                "{self.name}::Spline::N".format(self=self), "value"
-            ]
+        if self.ls_enum == LS.GSpline:
+            min_ = self.__class__.consts.loc[f"{self.name}::Spline::Min", "value"]
+            max_ = self.__class__.consts.loc[f"{self.name}::Spline::Max", "value"]
+            N = self.__class__.consts.loc[f"{self.name}::Spline::N", "value"]
             AdditionalVars = programmatic_name(self.name) + "_SplineArr"
             return """new Lineshapes::GSpline("{name}", {par}_M, {par}_W, {L}, M_{a}{b}, FF::BL2,
             {radius}, {AdditionalVars}, Lineshapes::spline_t({min},{max},{N}))""".format(
@@ -295,12 +281,12 @@ class GooFitChain(AmplitudeChain):
                 b=b,
                 radius=radius,
                 AdditionalVars=AdditionalVars,
-                min=min,
-                max=max,
+                min=min_,
+                max=max_,
                 N=int(N),
             )
 
-        elif self.ls_enum == LS.kMatrix:
+        if self.ls_enum == LS.kMatrix:
             _, poleprod, pterm = self.lineshape.split(".")
             is_pole = "true" if poleprod == "pole" else "false"
             return """new Lineshapes::kMatrix("{name}", {pterm}, {is_pole},
@@ -317,17 +303,14 @@ class GooFitChain(AmplitudeChain):
                 radius=radius,
             )
 
-        elif self.ls_enum == LS.FOCUS:
+        if self.ls_enum == LS.FOCUS:
             _, mod = self.lineshape.split(".")
             return (
                 'new Lineshapes::FOCUS("{name}", Lineshapes::FOCUS::Mod::{mod},'
                 " {par}_M, {par}_W, {L}, M_{a}{b}, FF::BL2, {radius})"
             ).format(name=name, mod=mod, par=par, L=L, a=a, b=b, radius=radius)
 
-        else:
-            raise NotImplementedError(
-                "Unimplemented GooFit Lineshape {self.ls_enum.name}".format(self=self)
-            )
+        raise NotImplementedError(f"Unimplemented GooFit Lineshape {self.ls_enum.name}")
 
     def make_spinfactor(self, final_states):
         spin_factors = self.spinfactors
@@ -349,8 +332,8 @@ class GooFitChain(AmplitudeChain):
                             spin_factor=spin_factor, structure_list=structure_list
                         )
                     )
-        exit = "\n    }));\n"
-        return intro + ",\n".join(factor) + exit
+        exit_ = "\n    }));\n"
+        return intro + ",\n".join(factor) + exit_
 
     def make_linefactor(self, final_states):
         intro = "    line_factor_list.push_back(std::vector<Lineshape*>{\n"
@@ -358,8 +341,8 @@ class GooFitChain(AmplitudeChain):
         for structure in self.list_structure(final_states):
             for sub in self.vertexes:
                 factor.append("        " + sub.make_lineshape(structure))
-        exit = "\n    });\n"
-        return intro + ",\n".join(factor) + exit
+        exit_ = "\n    });\n"
+        return intro + ",\n".join(factor) + exit_
 
     def make_amplitude(self, final_states):
         n = len(self.list_structure(final_states))
@@ -391,7 +374,10 @@ class GooFitChain(AmplitudeChain):
 
     @classmethod
     def read_ampgen(cls, *args, **kargs):
-        line_arr, GooFitChain.pars, GooFitChain.consts, all_states = super(
-            GooFitChain, cls
-        ).read_ampgen(*args, **kargs)
+        (
+            line_arr,
+            GooFitChain.pars,
+            GooFitChain.consts,
+            all_states,
+        ) = super().read_ampgen(*args, **kargs)
         return line_arr, all_states

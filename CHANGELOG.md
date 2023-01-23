@@ -1,5 +1,68 @@
 # Changelog
 
+## Version 0.15.0 (2022-11-08)
+
+* Dependencies:
+  - Package dependent on ``Particle`` version 0.21.x.
+  - Adapted to Python 3 only Lark 1.x series.
+  - Support for Python 3.11 added and support for Python 3.6 removed.
+* Parsing of decay files (aka .dec files):
+  - Updated to the latest Belle II master file DECAY.DEC.
+  - Added support for ModelAlias keyword used in Belle II decay files.
+* Miscellaneous:
+  - Added a CITATION.cff file.
+  - Moved over to using hatchling.
+  - Started using AllContributors to acknowledge contributions explicitly.
+* CI and tests:
+  - Updates to pre-commit hooks and CI YAML files.
+  - Various improvements to the CI.
+
+## Version 0.14.2 (2022-07-11)
+
+* Parsing of decay files (aka .dec files):
+  - Minor improvements such as in type checking.
+  - Documentation updates.
+  - More tests.
+* CI and tests:
+  - Several improvements to GHAs.
+  - Various hooks version updates.
+  - Added a `dependabot.yml`.
+
+## Version 0.14.1 (2022-02-03)
+
+* Universal representation of decay chains:
+  - Extra documentation and examples of usage.
+  - Test suite extended.
+* Miscellaneous:
+  - Type checking introduced.
+* Tests:
+  - CI now tests the notebooks as well.
+  - Various hooks version updates.
+
+## Version 0.14.0 (2022-01-17)
+
+Package dependent on Python 3 only ``Particle`` version 0.20.
+Otherwise identical to series 0.13.
+
+## Version 0.13.1 (2022-01-15)
+
+* Universal representation of decay chains:
+  - Adapt DOT representations to work with graphviz >= 0.19, which broke the API removing `_repr_svg_()`.
+* Tests:
+  - Various hooks version updates.
+
+## Version 0.13.0 (2021-11-10)
+
+* Dependencies:
+  - Dropped Python 2 (2.7) support.
+  - Added support for Python 3.10 and dropped 3.5.
+  - Dependency on `lark-parser` upgraded to recent versions.
+* Tests:
+  - Dependency on Pytest upgraded.
+  - Added new pre-commit hooks and updated various versions of existing hooks.
+* Miscellaneous:
+  - Added Nox support.
+
 ## Version 0.12.0 (2021-09-02)
 
 * Dependencies:
@@ -110,7 +173,7 @@
 ## Version 0.6.1 (2020-01-15)
 
 * Parsing of decay files (aka .dec files):
-  - Simpifications in various methods of class ``DecFileParser``.
+  - Simplifications in various methods of class ``DecFileParser``.
   - A couple more tests added.
 * Minor fixes.
 
