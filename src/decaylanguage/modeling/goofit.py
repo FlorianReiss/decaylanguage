@@ -37,6 +37,12 @@ class SF_4Body(Enum):
     FF_123_4_L1 = 13
     FF_123_4_L2 = 14
     ONE = 15
+    DtoV1P1_V1tos2P2_s2toP3P4 = 16
+    DtoA1P1_A1toN2P2_N2toP3P4 = 17
+    DtoU1P1_U1toV2P2_V2toP3P4 = 18
+    DtoN1N2_N1toP1P2_N2toP3P4 = 19
+    DtoU1P1_U1toA2P2_A2toP3P4 = 20
+
 
 
 known_spinfactors = {
@@ -51,6 +57,12 @@ known_spinfactors = {
     "DtoV1V2_V1toP1P2_V2toP3P4_P": (SF_4Body.DtoV1V2_V1toP1P2_V2toP3P4_P,),
     "Dtos1P1_s1toS2P2_S2toP3P4": (SF_4Body.DtoPP1_PtoSP2_StoP3P4,),
     "Dtos1P1_s1toV2P2_V2toP3P4": (SF_4Body.DtoPP1_PtoVP2_VtoP3P4,),
+    "DtoV1P1_V1tos2P2_s2toP3P4": (SF_4Body.DtoV1P1_V1tos2P2_s2toP3P4,),
+    "DtoA1P1_A1toN2P2_N2toP3P4": (SF_4Body.DtoA1P1_A1toN2P2_N2toP3P4,),
+    "DtoU1P1_U1toV2P2_V2toP3P4": (SF_4Body.DtoU1P1_U1toV2P2_V2toP3P4,),
+    "DtoN1N2_N1toP1P2_N2toP3P4": (SF_4Body.DtoN1N2_N1toP1P2_N2toP3P4,),
+    "DtoU1P1_U1toA2P2_A2toP3P4": (SF_4Body.DtoU1P1_U1toA2P2_A2toP3P4,),
+
 }
 
 
